@@ -13,6 +13,17 @@ export DEBIAN_FRONTEND=noninteractive
 # Auto-restart daemons during apt upgrades without user prompt
 sudo sed -i 's/#\$nrconf{restart} =.*/\$nrconf{restart} = '\''a'\'';/g' /etc/needrestart/needrestart.conf
 
+# Prevent release upgrade to Ubuntu 24.04
+sudo sed -i 's/^Prompt=.*/Prompt=never/' /etc/update-manager/release-upgrades
+
+# Suppress Ubuntu Pro and related upgrade prompts
+sudo pro config set apt_news=false || true
+sudo chmod -x /etc/update-motd.d/50-motd-news || true
+
+# Ensure fully non-interactive apt behavior
+export DEBIAN_FRONTEND=noninteractive
+sudo sed -i 's/#\$nrconf{restart} =.*/\$nrconf{restart} = '\''a'\'';/g' /etc/needrestart/needrestart.conf
+
 # Ensure base tools are installed first
 sudo apt update && sudo apt install -y \
     curl \
@@ -54,5 +65,36 @@ sudo systemctl unmask dbus || true
 sudo systemctl set-default graphical.target
 sudo systemctl enable gdm3
 sudo systemctl restart gdm3
+
+# === Create Desktop Shortcuts ===
+DESKTOP_DIR="/home/$USER/Desktop"
+mkdir -p $DESKTOP_DIR
+
+# JupyterLab Launcher
+cat <<EOF > $DESKTOP_DIR/JupyterLab.desktop
+[Desktop Entry]
+Name=JupyterLab
+Comment=Launch JupyterLab
+Exec=sh -c "jupyter-lab"
+Icon=utilities-terminal
+Terminal=true
+Type=Application
+Categories=Development;
+EOF
+
+# RViz Launcher
+cat <<EOF > $DESKTOP_DIR/RViz.desktop
+[Desktop Entry]
+Name=RViz
+Comment=Launch ROS 2 Visualization Tool
+Exec=sh -c "source /opt/ros/humble/setup.bash && rviz2"
+Icon=applications-graphics
+Terminal=true
+Type=Application
+Categories=Development;
+EOF
+
+chmod +x $DESKTOP_DIR/*.desktop
+chown $USER:$USER $DESKTOP_DIR/*.desktop
 
 echo "✅ STAIRS setup complete. Reboot the VM to begin using the desktop environment."
