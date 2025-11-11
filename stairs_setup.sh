@@ -10,6 +10,9 @@ echo "Starting STAIRS setup..."
 # Set noninteractive mode for APT
 export DEBIAN_FRONTEND=noninteractive
 
+# Auto-restart daemons during apt upgrades without user prompt
+sudo sed -i 's/#\$nrconf{restart} =.*/\$nrconf{restart} = '\''a'\'';/g' /etc/needrestart/needrestart.conf
+
 # Ensure base tools are installed first
 sudo apt update && sudo apt install -y \
     curl \
