@@ -115,44 +115,4 @@ sudo apt install -y python3-pip python3-venv
 pip3 install --upgrade pip
 pip3 install jupyterlab numpy pandas matplotlib scikit-learn
 
-# -----------------------------
-# Desktop Shortcuts
-# -----------------------------
-DESKTOP_DIR="$HOME/Desktop"
-mkdir -p "$DESKTOP_DIR"
-
-echo "Creating shortcuts..."
-
-# Terminal
-cat <<EOF > "$DESKTOP_DIR/Terminal.desktop"
-[Desktop Entry]
-Name=Terminal
-Exec=gnome-terminal
-Icon=utilities-terminal
-Type=Application
-Categories=System;
-EOF
-
-# JupyterLab
-cat <<EOF > "$DESKTOP_DIR/JupyterLab.desktop"
-[Desktop Entry]
-Name=JupyterLab
-Exec=gnome-terminal -- bash -c "jupyter lab --no-browser --ip=0.0.0.0"
-Icon=accessories-text-editor
-Type=Application
-Categories=Development;
-EOF
-
-# RViz
-cat <<EOF > "$DESKTOP_DIR/RViz.desktop"
-[Desktop Entry]
-Name=RViz
-Exec=gnome-terminal -- bash -c "rviz2"
-Icon=applications-graphics
-Type=Application
-Categories=Development;
-EOF
-
-chmod +x "$DESKTOP_DIR/"*.desktop
-
 echo "STAIRS environment setup complete. Reboot your VM to start the desktop environment."
