@@ -1,100 +1,158 @@
 #!/bin/bash
 
-# STAIRS Ubuntu setup script
-# Prepares a clean Ubuntu environment for GUI-based ROS 2 and JupyterLab work
-
 set -e
 
-echo "Starting STAIRS setup..."
+# -----------------------------
+# FLAGS: --vmware or --utm
+# -----------------------------
+FORCE_VMWARE=false
+FORCE_UTM=false
 
-# Set noninteractive mode for APT
-export DEBIAN_FRONTEND=noninteractive
+for arg in "$@"; do
+    case $arg in
+        --vmware)
+        FORCE_VMWARE=true
+        shift
+        ;;
+        --utm)
+        FORCE_UTM=true
+        shift
+        ;;
+    esac
+done
 
-# Auto-restart daemons during apt upgrades without user prompt
-sudo sed -i 's/#\$nrconf{restart} =.*/\$nrconf{restart} = '\''a'\'';/g' /etc/needrestart/needrestart.conf
+# -----------------------------
+# Detect Hypervisor (unless overridden)
+# -----------------------------
+detect_hypervisor() {
+    if [ "$FORCE_VMWARE" = true ]; then
+        echo "Hypervisor manually set to VMware."
+        echo "vmware"
+    elif [ "$FORCE_UTM" = true ]; then
+        echo "Hypervisor manually set to UTM (QEMU)."
+        echo "utm"
+    else
+        PRODUCT_NAME=$(dmidecode -s system-product-name 2>/dev/null || echo "")
+        if echo "$PRODUCT_NAME" | grep -qi "vmware"; then
+            echo "Detected VMware environment."
+            echo "vmware"
+        elif systemd-detect-virt | grep -qi "qemu"; then
+            echo "Detected UTM/QEMU environment."
+            echo "utm"
+        else
+            echo "Unknown environment. Defaulting to UTM config."
+            echo "utm"
+        fi
+    fi
+}
 
-# Prevent release upgrade to Ubuntu 24.04
+HYPERVISOR=$(detect_hypervisor)
+
+# -----------------------------
+# Update + Base packages
+# -----------------------------
+echo "Updating system..."
+sudo apt update && sudo apt upgrade -y
+
+echo "Installing core packages..."
+sudo apt install -y curl gnupg lsb-release wget git nano gnome-terminal
+
+# -----------------------------
+# Prevent Ubuntu Pro prompts and version upgrade nags
+# -----------------------------
+echo "Disabling release upgrade prompts..."
 sudo sed -i 's/^Prompt=.*/Prompt=never/' /etc/update-manager/release-upgrades
 
-# Suppress Ubuntu Pro and related upgrade prompts
-sudo pro config set apt_news=false || true
-sudo chmod -x /etc/update-motd.d/50-motd-news || true
+echo "Disabling Ubuntu Pro auto-suggestions..."
+sudo touch /etc/cloud/cloud-init.disabled
 
-# Ensure fully non-interactive apt behavior
-export DEBIAN_FRONTEND=noninteractive
-sudo sed -i 's/#\$nrconf{restart} =.*/\$nrconf{restart} = '\''a'\'';/g' /etc/needrestart/needrestart.conf
+# -----------------------------
+# Install Ubuntu Desktop
+# -----------------------------
+echo "Installing Ubuntu Desktop..."
+sudo apt install -y ubuntu-desktop gdm3
 
-# Ensure base tools are installed first
-sudo apt update && sudo apt install -y \
-    curl \
-    gnupg \
-    lsb-release \
-    software-properties-common \
-    git
+echo "Enabling GDM3 to start on boot..."
+sudo systemctl enable gdm3
 
-# Temporarily prevent key services from restarting during install
-sudo systemctl mask gdm3 || true
-sudo systemctl mask dbus || true
+# -----------------------------
+# Install VMware Tools or QEMU Guest Agent
+# -----------------------------
+if [ "$HYPERVISOR" = "vmware" ]; then
+    echo "Installing VMware Tools..."
+    sudo apt install -y open-vm-tools open-vm-tools-desktop
+elif [ "$HYPERVISOR" = "utm" ]; then
+    echo "Installing QEMU Guest Agent..."
+    sudo apt install -y qemu-guest-agent spice-vdagent
+fi
 
-# Add ROS 2 GPG key and source list
+# -----------------------------
+# Add ROS 2 Humble Repository
+# -----------------------------
+echo "Setting up ROS 2 Humble sources..."
 sudo mkdir -p /etc/apt/keyrings
-curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key | sudo tee /etc/apt/keyrings/ros-archive-keyring.gpg > /dev/null
-echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/ros2.list
+curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key | \
+    sudo tee /etc/apt/keyrings/ros-archive-keyring.gpg >/dev/null
 
-# Update sources and install ROS 2 Desktop (with GUI tools)
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu $(lsb_release -cs) main" | \
+    sudo tee /etc/apt/sources.list.d/ros2.list
+
 sudo apt update
 sudo apt install -y ros-humble-desktop
 
-# Install full Ubuntu Desktop (GUI environment)
-sudo apt install -y ubuntu-desktop
+# -----------------------------
+# Add ROS to bash session
+# -----------------------------
+echo "Adding ROS environment to bashrc..."
+echo "source /opt/ros/humble/setup.bash" >> ~/.bashrc
+source ~/.bashrc
 
-# Install Python tools for JupyterLab and ML libraries
+# -----------------------------
+# Install Python tools
+# -----------------------------
+echo "Installing Python packages..."
 sudo apt install -y python3-pip python3-venv
 pip3 install --upgrade pip
 pip3 install jupyterlab numpy pandas matplotlib scikit-learn
 
-# Enable ROS environment setup on login
-echo "source /opt/ros/humble/setup.bash" >> ~/.bashrc
-source ~/.bashrc
+# -----------------------------
+# Desktop Shortcuts
+# -----------------------------
+DESKTOP_DIR="$HOME/Desktop"
+mkdir -p "$DESKTOP_DIR"
 
-# Re-enable masked services
-sudo systemctl unmask gdm3 || true
-sudo systemctl unmask dbus || true
+echo "Creating shortcuts..."
 
-# Set GUI to start by default and start GDM
-sudo systemctl set-default graphical.target
-sudo systemctl enable gdm3
-sudo systemctl restart gdm3
+# Terminal
+cat <<EOF > "$DESKTOP_DIR/Terminal.desktop"
+[Desktop Entry]
+Name=Terminal
+Exec=gnome-terminal
+Icon=utilities-terminal
+Type=Application
+Categories=System;
+EOF
 
-# === Create Desktop Shortcuts ===
-DESKTOP_DIR="/home/$USER/Desktop"
-mkdir -p $DESKTOP_DIR
-
-# JupyterLab Launcher
-cat <<EOF > $DESKTOP_DIR/JupyterLab.desktop
+# JupyterLab
+cat <<EOF > "$DESKTOP_DIR/JupyterLab.desktop"
 [Desktop Entry]
 Name=JupyterLab
-Comment=Launch JupyterLab
-Exec=sh -c "jupyter-lab"
-Icon=utilities-terminal
-Terminal=true
+Exec=gnome-terminal -- bash -c "jupyter lab --no-browser --ip=0.0.0.0"
+Icon=accessories-text-editor
 Type=Application
 Categories=Development;
 EOF
 
-# RViz Launcher
-cat <<EOF > $DESKTOP_DIR/RViz.desktop
+# RViz
+cat <<EOF > "$DESKTOP_DIR/RViz.desktop"
 [Desktop Entry]
 Name=RViz
-Comment=Launch ROS 2 Visualization Tool
-Exec=sh -c "source /opt/ros/humble/setup.bash && rviz2"
+Exec=gnome-terminal -- bash -c "rviz2"
 Icon=applications-graphics
-Terminal=true
 Type=Application
 Categories=Development;
 EOF
 
-chmod +x $DESKTOP_DIR/*.desktop
-chown $USER:$USER $DESKTOP_DIR/*.desktop
+chmod +x "$DESKTOP_DIR/"*.desktop
 
-echo "✅ STAIRS setup complete. Reboot the VM to begin using the desktop environment."
+echo "STAIRS environment setup complete. Reboot your VM to start the desktop environment."
